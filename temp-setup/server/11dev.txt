@@ -1,0 +1,85 @@
+ADD file:3c54ad257f2e04f7294ce879b884820cf4726c8e93ec548172825963e40c79ad in / 
+CMD ["bash"] 
+ENV PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin 
+ENV LANG=C.UTF-8 
+RUN set -eux; apt-get update; apt-get install -y --no-install-recommends ca-certificates netbase ; rm -rf /var/lib/apt/lists/* 
+ENV GPG_KEY=0D96DF4D4110E5C43FBFB17F2D347EA6AA65421D 
+ENV PYTHON_VERSION=3.7.12 
+RUN set -ex
+   &&  savedAptMark="$(apt-mark showmanual)"
+   &&  apt-get update
+   &&  apt-get install -y --no-install-recommends dpkg-dev gcc libbluetooth-dev libbz2-dev libc6-dev libexpat1-dev libffi-dev libgdbm-dev liblzma-dev libncursesw5-dev libreadline-dev libsqlite3-dev libssl-dev make tk-dev uuid-dev wget xz-utils zlib1g-dev $(command -v gpg > /dev/null || echo 'gnupg dirmngr')
+   &&  wget -O python.tar.xz "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz"
+   &&  wget -O python.tar.xz.asc "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc"
+   &&  export GNUPGHOME="$(mktemp -d)"
+   &&  gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$GPG_KEY"
+   &&  gpg --batch --verify python.tar.xz.asc python.tar.xz
+   &&  { command -v gpgconf > /dev/null
+   &&  gpgconf --kill all || :; }
+   &&  rm -rf "$GNUPGHOME" python.tar.xz.asc
+   &&  mkdir -p /usr/src/python
+   &&  tar -xJC /usr/src/python --strip-components=1 -f python.tar.xz
+   &&  rm python.tar.xz
+   &&  cd /usr/src/python
+   &&  gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)"
+   &&  ./configure --build="$gnuArch" --enable-loadable-sqlite-extensions --enable-optimizations --enable-option-checking=fatal --enable-shared --with-system-expat --with-system-ffi --without-ensurepip
+   &&  make -j "$(nproc)" LDFLAGS="-Wl,--strip-all" PROFILE_TASK='-m test.regrtest --pgo test_array test_base64 test_binascii test_binhex test_binop test_bytes test_c_locale_coercion test_class test_cmath test_codecs test_compile test_complex test_csv test_decimal test_dict test_float test_fstring test_hashlib test_io test_iter test_json test_long test_math test_memoryview test_pickle test_re test_set test_slice test_struct test_threading test_time test_traceback test_unicode '
+   &&  make install
+   &&  rm -rf /usr/src/python
+   &&  find /usr/local -depth \( \( -type d -a \( -name test -o -name tests -o -name idle_test \) \) -o \( -type f -a \( -name '*.pyc' -o -name '*.pyo' -o -name '*.a' \) \) -o \( -type f -a -name 'wininst-*.exe' \) \) -exec rm -rf '{}' +
+   &&  ldconfig
+   &&  apt-mark auto '.*' > /dev/null
+   &&  apt-mark manual $savedAptMark
+   &&  find /usr/local -type f -executable -not \( -name '*tkinter*' \) -exec ldd '{}' ';' | awk '/=>/ { print $(NF-1) }' | sort -u | xargs -r dpkg-query --search | cut -d: -f1 | sort -u | xargs -r apt-mark manual
+   &&  apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false
+   &&  rm -rf /var/lib/apt/lists/*
+   &&  python3 --version 
+RUN cd /usr/local/bin
+   &&  ln -s idle3 idle
+   &&  ln -s pydoc3 pydoc
+   &&  ln -s python3 python
+   &&  ln -s python3-config python-config 
+ENV PYTHON_PIP_VERSION=21.2.4 
+ENV PYTHON_SETUPTOOLS_VERSION=57.5.0 
+ENV PYTHON_GET_PIP_URL=https://github.com/pypa/get-pip/raw/3cb8888cc2869620f57d5d2da64da38f516078c7/public/get-pip.py 
+ENV PYTHON_GET_PIP_SHA256=c518250e91a70d7b20cceb15272209a4ded2a0c263ae5776f129e0d9b5674309 
+RUN set -ex; savedAptMark="$(apt-mark showmanual)"; apt-get update; apt-get install -y --no-install-recommends wget; wget -O get-pip.py "$PYTHON_GET_PIP_URL"; echo "$PYTHON_GET_PIP_SHA256 *get-pip.py" | sha256sum --check --strict -; apt-mark auto '.*' > /dev/null; [ -z "$savedAptMark" ] || apt-mark manual $savedAptMark; apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; rm -rf /var/lib/apt/lists/*; python get-pip.py --disable-pip-version-check --no-cache-dir "pip==$PYTHON_PIP_VERSION" "setuptools==$PYTHON_SETUPTOOLS_VERSION" ; pip --version; find /usr/local -depth \( \( -type d -a \( -name test -o -name tests -o -name idle_test \) \) -o \( -type f -a \( -name '*.pyc' -o -name '*.pyo' \) \) \) -exec rm -rf '{}' +; rm -f get-pip.py 
+CMD ["python3"] 
+EXPOSE 5000 
+ARG skip_ds_deps 
+ARG skip_dev_deps 
+RUN useradd --create-home redash 
+RUN apt-get update
+   &&  apt-get install -y curl gnupg build-essential pwgen libffi-dev sudo git-core wget libpq-dev g++ unixodbc-dev xmlsec1 libssl-dev default-libmysqlclient-dev freetds-dev libsasl2-dev unzip libsasl2-modules-gssapi-mit
+   &&  curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+   &&  curl https://packages.microsoft.com/config/debian/10/prod.list > /etc/apt/sources.list.d/mssql-release.list
+   &&  apt-get update
+   &&  ACCEPT_EULA=Y apt-get install -y msodbcsql17
+   &&  apt-get clean
+   &&  rm -rf /var/lib/apt/lists/* 
+ARG databricks_odbc_driver_url=https://databricks.com/wp-content/uploads/2.6.10.1010-2/SimbaSparkODBC-2.6.10.1010-2-Debian-64bit.zip 
+|1 databricks_odbc_driver_url=https://databricks.com/wp-content/uploads/2.6.10.1010-2/SimbaSparkODBC-2.6.10.1010-2-Debian-64bit.zip /bin/sh -c wget --quiet $databricks_odbc_driver_url -O /tmp/simba_odbc.zip
+   &&  chmod 600 /tmp/simba_odbc.zip
+   &&  unzip /tmp/simba_odbc.zip -d /tmp/
+   &&  dpkg -i /tmp/SimbaSparkODBC-*/*.deb
+   &&  echo "[Simba]\nDriver = /opt/simba/spark/lib/64/libsparkodbc_sb64.so" >> /etc/odbcinst.ini
+   &&  rm /tmp/simba_odbc.zip
+   &&  rm -rf /tmp/SimbaSparkODBC* 
+WORKDIR /app 
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 
+ENV PIP_NO_CACHE_DIR=1 
+|1 databricks_odbc_driver_url=https://databricks.com/wp-content/uploads/2.6.10.1010-2/SimbaSparkODBC-2.6.10.1010-2-Debian-64bit.zip /bin/sh -c pip install pip==20.2.4; 
+COPY file:c6452d596cb2a21ecc9a890e857a9b56a6f6d90e5d6b6043f73854af8e968318 in ./ 
+|1 databricks_odbc_driver_url=https://databricks.com/wp-content/uploads/2.6.10.1010-2/SimbaSparkODBC-2.6.10.1010-2-Debian-64bit.zip /bin/sh -c if [ "x$skip_ds_deps" = "x" ] ; then pip install -r requirements_all_ds.txt ; else echo "Skipping pip install -r requirements_all_ds.txt" ; fi 
+COPY multi:2bdd8add3e729e201576c146b441148b553eae226cf025181a64102f5154049c in ./ 
+|1 databricks_odbc_driver_url=https://databricks.com/wp-content/uploads/2.6.10.1010-2/SimbaSparkODBC-2.6.10.1010-2-Debian-64bit.zip /bin/sh -c if [ "x$skip_dev_deps" = "x" ] ; then pip install -r requirements_dev.txt ; fi 
+COPY file:3ac62e5f4cf0a6a4791ccf89c0424e04e69827e1d1a55240d603c54e9b979b66 in ./ 
+|1 databricks_odbc_driver_url=https://databricks.com/wp-content/uploads/2.6.10.1010-2/SimbaSparkODBC-2.6.10.1010-2-Debian-64bit.zip /bin/sh -c pip install -r requirements.txt 
+COPY dir:bed201ea2104be31a52c0da0c3531510dab6d26bb5872196760986bc840dc38d in /app 
+COPY dir:8a9a8040e0af1031eff18eb5bca6f26dd0a708ded2bac084f947a034f735a3d6 in /app/client/dist 
+|1 databricks_odbc_driver_url=https://databricks.com/wp-content/uploads/2.6.10.1010-2/SimbaSparkODBC-2.6.10.1010-2-Debian-64bit.zip /bin/sh -c chown -R redash /app 
+USER redash 
+ENTRYPOINT ["/app/bin/docker-entrypoint"] 
+CMD ["server"] 
+dev_server 
+SIZE COMMENT

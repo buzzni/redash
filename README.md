@@ -1,3 +1,9 @@
+# 2023-03-24 기준 aiaas에서 사용 중인 demo용 redash의 Dockerfile을 저장하기 위한 브랜치
+
+- 참고 디렉토리: [temp-setup/](temp-setup/)
+- 연락포인트: 존
+
+
 <p align="center">
   <img title="Redash" src='https://redash.io/assets/images/logo.png' width="200px"/>
 </p>
